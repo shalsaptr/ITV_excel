@@ -2,46 +2,54 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="Manning Converter Fix", layout="wide")
+st.set_page_config(page_title="Manning Fixer", layout="wide")
 
 st.title("🚢 Manning Deployment Converter")
 
 def process_data(file):
-    # Membaca excel tanpa header agar koordinat kolom murni
+    # Membaca excel tanpa header agar index kolom murni (0, 1, 2...)
     df = pd.read_excel(file, header=None)
     
     clean_rows = []
     
-    # Berdasarkan file Anda, ITV ada di baris ganjil dan data di baris genap (atau sebaliknya)
-    # Kita scan kolom B(2), D(4), F(6) berdasarkan koordinat file Anda
-    # Catatan: Kolom B di Excel sering terbaca sebagai index 1 atau 2 di pandas tergantung format
-    # Kita scan semua kolom agar tidak meleset
+    # Berdasarkan data mentah Anda:
+    # ITV (245) ada di Baris 1, Kolom index 2 (Kolom C)
+    # ID (7094) ada di Baris 2, Kolom index 1 (Kolom B)
+    # Nama (TRI BAGUS) ada di Baris 2, Kolom index 2 (Kolom C)
     
+    # Kolom tempat ITV dan Nama berada (C, E, G)
+    itv_name_cols = [2, 4, 6] 
+
     for r in range(len(df) - 1):
-        for c in range(len(df.columns) - 1):
-            itv_candidate = df.iloc[r, c]
-            
-            # Ciri ITV: Angka bulat 3 digit (245, 257, dll)
-            if pd.notna(itv_candidate) and str(itv_candidate).replace('.0','').isdigit():
-                itv_str = str(itv_candidate).replace('.0','')
+        for c in itv_name_cols:
+            try:
+                # 1. Ambil ITV dari baris r (Kolom C, E, atau G)
+                itv_val = df.iloc[r, c]
                 
-                if 100 <= int(itv_str) <= 999:
-                    # AMBIL ID (Tepat di bawah ITV)
-                    id_val = df.iloc[r+1, c]
-                    # AMBIL NAMA (Di sebelah kanan ID)
-                    nama_val = df.iloc[r+1, c+1]
+                # Cek apakah sel tersebut berisi nomor ITV (misal 245)
+                if pd.notna(itv_val) and str(itv_val).replace('.0','').isdigit():
+                    itv_num = str(itv_val).replace('.0','')
                     
-                    if pd.notna(id_val) and pd.notna(nama_val):
-                        nama_clean = str(nama_val).strip().upper()
+                    if 100 <= int(itv_num) <= 999:
+                        # 2. Ambil ID dari baris r+1 (Satu kolom ke KIRI dari Nama)
+                        id_val = df.iloc[r+1, c-1] 
                         
-                        # Validasi agar bukan teks sampah
-                        if nama_clean not in ["N", "", "NAMA PERSONIL", "UAT"]:
-                            clean_rows.append({
-                                "ITV": itv_str,
-                                "ID": str(id_val).replace('.0',''),
-                                "Nama Operator": nama_clean
-                            })
-            
+                        # 3. Ambil NAMA dari baris r+1 (Kolom yang SAMA dengan ITV tadi)
+                        nama_val = df.iloc[r+1, c]
+                        
+                        if pd.notna(id_val) and pd.notna(nama_val):
+                            nama_clean = str(nama_val).strip().upper()
+                            
+                            # Filter sampah data
+                            if nama_clean not in ["N", "", "NAMA PERSONIL", "UAT"]:
+                                clean_rows.append({
+                                    "ITV": itv_num,
+                                    "ID": str(id_val).replace('.0',''),
+                                    "Nama Operator": nama_clean
+                                })
+            except:
+                continue
+                
     return pd.DataFrame(clean_rows)
 
 uploaded_file = st.file_uploader("Upload File Excel Rekap Manning", type=["xlsx"])
@@ -50,13 +58,12 @@ if uploaded_file:
     result_df = process_data(uploaded_file)
     
     if not result_df.empty:
-        # Hapus duplikat dan pastikan ID bukan angka ITV yang tertangkap dua kali
-        result_df = result_df[result_df['ITV'] != result_df['ID']]
+        # Hapus duplikat dan tampilkan
         result_df = result_df.drop_duplicates()
         
         st.success(f"Ditemukan {len(result_df)} data operator.")
         st.subheader("Preview Output (3 Kolom)")
-        st.dataframe(result_df, use_container_width=True, hide_index=True)
+        st.table(result_df.head(10)) # Gunakan table agar terlihat jelas per kolomnya
         
         # Download
         output = BytesIO()
@@ -66,8 +73,8 @@ if uploaded_file:
         st.download_button(
             label="📥 Download Excel Rapi",
             data=output.getvalue(),
-            file_name="Manning_Rapi.xlsx",
+            file_name="Manning_Sesuai_Gambar.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.error("Data tidak terbaca. Pastikan format: ITV (Atas), ID (Bawah ITV), Nama (Samping ID).")
+        st.error("Data tidak terbaca. Pastikan format sel sudah benar.")
