@@ -5,45 +5,43 @@ from io import BytesIO
 st.set_page_config(page_title="Manning Converter Fix", layout="wide")
 
 st.title("🚢 Manning Deployment Converter")
-st.write("Format: **ITV** (Baris Atas), **ID** (Baris Bawah, Kolom Sama), **Nama** (Baris Bawah, Samping ID)")
 
 def process_data(file):
-    # Membaca excel tanpa header
+    # Membaca excel tanpa header agar koordinat kolom murni
     df = pd.read_excel(file, header=None)
     
     clean_rows = []
     
-    # Berdasarkan file Anda, data ID ada di kolom B(1), D(3), F(5)
-    # Data Nama ada di sampingnya: C(2), E(4), G(6)
-    target_id_cols = [1, 3, 5] 
+    # Berdasarkan file Anda, ITV ada di baris ganjil dan data di baris genap (atau sebaliknya)
+    # Kita scan kolom B(2), D(4), F(6) berdasarkan koordinat file Anda
+    # Catatan: Kolom B di Excel sering terbaca sebagai index 1 atau 2 di pandas tergantung format
+    # Kita scan semua kolom agar tidak meleset
     
     for r in range(len(df) - 1):
-        for c in target_id_cols:
-            try:
-                # 1. Ambil ITV dari baris saat ini (r)
-                itv_val = df.iloc[r, c+1] # Di file Anda, ITV sering di kolom Nama tapi baris atas
-                # Jika tidak ketemu, cek di kolom ID-nya sendiri (r, c)
-                if not str(itv_val).replace('.0','').isdigit():
-                    itv_val = df.iloc[r, c]
-
-                # 2. Ambil ID dan Nama dari baris BAWAHNYA (r+1)
-                id_val = df.iloc[r+1, c]
-                nama_val = df.iloc[r+1, c+1]
+        for c in range(len(df.columns) - 1):
+            itv_candidate = df.iloc[r, c]
+            
+            # Ciri ITV: Angka bulat 3 digit (245, 257, dll)
+            if pd.notna(itv_candidate) and str(itv_candidate).replace('.0','').isdigit():
+                itv_str = str(itv_candidate).replace('.0','')
                 
-                # Validasi: ITV harus angka, ID harus ada, Nama bukan 'N'
-                if pd.notna(itv_val) and str(itv_val).replace('.0','').isdigit():
+                if 100 <= int(itv_str) <= 999:
+                    # AMBIL ID (Tepat di bawah ITV)
+                    id_val = df.iloc[r+1, c]
+                    # AMBIL NAMA (Di sebelah kanan ID)
+                    nama_val = df.iloc[r+1, c+1]
+                    
                     if pd.notna(id_val) and pd.notna(nama_val):
-                        nama_str = str(nama_val).strip().upper()
+                        nama_clean = str(nama_val).strip().upper()
                         
-                        if nama_str not in ["N", "", "NAMA PERSONIL", "UAT"]:
+                        # Validasi agar bukan teks sampah
+                        if nama_clean not in ["N", "", "NAMA PERSONIL", "UAT"]:
                             clean_rows.append({
-                                "ITV": str(itv_val).replace('.0',''),
+                                "ITV": itv_str,
                                 "ID": str(id_val).replace('.0',''),
-                                "Nama Operator": nama_str
+                                "Nama Operator": nama_clean
                             })
-            except:
-                continue
-                
+            
     return pd.DataFrame(clean_rows)
 
 uploaded_file = st.file_uploader("Upload File Excel Rekap Manning", type=["xlsx"])
@@ -52,22 +50,24 @@ if uploaded_file:
     result_df = process_data(uploaded_file)
     
     if not result_df.empty:
-        # Menghapus baris yang ID-nya sama dengan ITV (mencegah salah tangkap)
+        # Hapus duplikat dan pastikan ID bukan angka ITV yang tertangkap dua kali
         result_df = result_df[result_df['ITV'] != result_df['ID']]
-        result_df = result_df.drop_duplicates().sort_values(by="ITV")
+        result_df = result_df.drop_duplicates()
         
         st.success(f"Ditemukan {len(result_df)} data operator.")
         st.subheader("Preview Output (3 Kolom)")
         st.dataframe(result_df, use_container_width=True, hide_index=True)
         
-        # Tombol Download
+        # Download
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            result_df.to_excel(writer, index=False, sheet_name='Sheet1')
+            result_df.to_excel(writer, index=False, sheet_name='Data_Manning')
         
-        st.download_button(label="📥 Download Excel Rapi", 
-                           data=output.getvalue(), 
-                           file_name="Manning_Rapi.xlsx", 
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(
+            label="📥 Download Excel Rapi",
+            data=output.getvalue(),
+            file_name="Manning_Rapi.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
-        st.error("Data tidak ditemukan. Pastikan format file sesuai gambar.")
+        st.error("Data tidak terbaca. Pastikan format: ITV (Atas), ID (Bawah ITV), Nama (Samping ID).")
