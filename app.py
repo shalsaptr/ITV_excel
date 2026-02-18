@@ -2,78 +2,61 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="Excel Cleaner - Manning Deployment", layout="wide")
+st.set_page_config(page_title="Manning Data Fixer", layout="wide")
 
-st.title("📊 Manning Data Extractor")
-st.markdown("Upload file Excel manning untuk dikonversi menjadi daftar ITV, ID, dan Nama yang rapi.")
+st.title("📑 Manning to Clean Excel")
+st.write("Upload file untuk merapikan data menjadi kolom: ITV, No ID, dan Nama Operator.")
 
-# --- Fungsi Processing Data ---
-def process_manning_data(file):
-    # Baca excel tanpa header karena formatnya tidak standar
+def process_data(file):
+    # Membaca data tanpa header agar koordinat sel murni
     df = pd.read_excel(file, header=None)
     
-    extracted_data = []
-
-    # Iterasi per baris untuk mengambil data
-    # Sesuai gambar/file: ID ada di kolom 1,3,5 dan Nama ada di kolom 2,4,6
-    # No ITV biasanya ada di baris tepat di atas baris Nama (atau di kolom tertentu)
+    rows_list = []
     
-    for r in range(len(df)):
-        for c in [1, 3, 5]: # Kolom B, D, F (ID)
-            try:
-                id_val = df.iloc[r, c]
-                name_val = df.iloc[r, c+1] # Kolom C, E, G (Nama)
+    # Looping baris untuk mencari ITV (Angka ITV biasanya ada di baris genap/ganjil tertentu)
+    # Kita akan memindai baris demi baris
+    for r in range(len(df) - 1):
+        for c in [1, 3, 5]:  # Kolom B, D, dan F (Tempat ITV dan ID berada)
+            val = df.iloc[r, c]
+            
+            # Cek jika sel saat ini adalah angka ITV (biasanya 3 digit seperti 238, 245, dll)
+            if pd.notna(val) and isinstance(val, (int, float)) and 100 <= val <= 999:
+                itv_no = int(val)
                 
-                # Ambil No ITV (biasanya ada di sel atasnya atau sel ID itu sendiri di baris berbeda)
-                # Berdasarkan pola file Anda: ITV ada di baris sebelum Nama/ID
-                itv_val = df.iloc[r-1, c] 
-
-                # Validasi: Hanya ambil jika Nama tidak kosong dan bukan "N" atau "Nama Operator"
-                if pd.notna(name_val) and str(name_val).strip() not in ["", "N", "Nama Personil", "Nama Operator"]:
-                    extracted_data.append({
-                        "No ITV": itv_val if pd.notna(itv_val) else "N/A",
-                        "No ID": id_val,
-                        "Nama Operator": name_val
+                # Mengambil ID dan NAMA dari baris tepat DI BAWAHNYA (r + 1)
+                id_op = df.iloc[r+1, c]
+                nama_op = df.iloc[r+1, c+1] # Nama ada di sebelah kanan ID
+                
+                # Validasi: Masukkan jika ada Nama dan bukan "N"
+                if pd.notna(nama_op) and str(nama_op).strip().upper() != "N":
+                    rows_list.append({
+                        "No ITV": itv_no,
+                        "No ID": id_op,
+                        "Nama Operator": nama_op
                     })
-            except:
-                continue
+                    
+    return pd.DataFrame(rows_list)
 
-    return pd.DataFrame(extracted_data)
-
-# --- UI Streamlit ---
-uploaded_file = st.file_uploader("Pilih file Excel Rekap Manning", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload File Excel Rekap Manning", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner('Sedang memproses data...'):
-        try:
-            # Jalankan pemrosesan
-            result_df = process_manning_data(uploaded_file)
-            
-            if not result_df.empty:
-                st.success(f"Berhasil mengekstrak {len(result_df)} data operator!")
-                
-                # Tampilkan Preview
-                st.subheader("Preview Data Bersih")
-                st.dataframe(result_df, use_container_width=True)
-
-                # --- Tombol Download Excel ---
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    result_df.to_excel(writer, index=False, sheet_name='Data_Manning')
-                
-                processed_data = output.getvalue()
-
-                st.download_button(
-                    label="📥 Download Hasil (.xlsx)",
-                    data=processed_data,
-                    file_name="Data_Manning_Clean.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            else:
-                st.warning("Data tidak ditemukan. Pastikan format file sesuai.")
-                
-        except Exception as e:
-            st.error(f"Terjadi kesalahan: {e}")
-
-else:
-    st.info("Menunggu file diupload...")
+    result_df = process_data(uploaded_file)
+    
+    if not result_df.empty:
+        st.subheader("Hasil Ekstraksi (Sesuai Gambar)")
+        # Tampilkan tabel di Streamlit
+        st.dataframe(result_df, use_container_width=True, hide_index=True)
+        
+        # Tombol Download
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            result_df.to_excel(writer, index=False, sheet_name='Clean_Data')
+        
+        st.download_button(
+            label="📥 Download Hasil Excel",
+            data=output.getvalue(),
+            file_name="Manning_Cleaned.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.error("Data tidak ditemukan. Pastikan format baris ITV dan Nama sesuai dengan template.")
