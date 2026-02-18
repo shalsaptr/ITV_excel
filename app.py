@@ -4,94 +4,93 @@ import pandas as pd
 # Konfigurasi Halaman
 st.set_page_config(page_title="Manning Deployment", layout="wide")
 
-# Custom CSS untuk tampilan kartu (Card)
+# Custom CSS untuk tampilan Card (mirip foto)
 st.markdown("""
     <style>
-    .stApp { background-color: #f4f7f6; }
     .card {
         background-color: white;
-        padding: 15px;
-        border-radius: 10px;
+        padding: 12px;
+        border-radius: 8px;
         border-left: 5px solid #007bff;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
         margin-bottom: 10px;
+        color: black;
     }
     .dermaga-title {
-        background-color: #0e1117;
+        background-color: #1c1e21;
         color: white;
-        padding: 10px;
+        padding: 8px;
         border-radius: 5px;
         margin-bottom: 15px;
-        font-size: 18px;
+        font-weight: bold;
         text-align: center;
+        font-size: 14px;
     }
-    .unit-label { color: #666; font-size: 12px; margin-bottom: 2px; }
-    .name-label { font-weight: bold; font-size: 16px; color: #1f1f1f; }
-    .id-label { color: #007bff; font-size: 13px; }
+    .unit-text { color: gray; font-size: 11px; margin-bottom: 2px; }
+    .name-text { font-weight: bold; font-size: 14px; }
+    .id-text { color: #007bff; font-size: 12px; }
     </style>
     """, unsafe_allow_html=True)
 
-def load_data():
-    # Membaca CSV (Sesuaikan nama file jika perlu)
-    df = pd.read_csv("rekap_manning_deployment.xlsx - Rekap_Manning.csv", header=None)
-    return df
-
 def display_personnel(id_val, name):
-    if pd.notna(name) and str(name).strip() != "" and str(name).upper() != 'N':
+    # Filter agar data kosong atau 'N' tidak muncul
+    if pd.notna(name) and str(name).strip() not in ["", "N", "Nama Personil", "ITV"]:
         st.markdown(f"""
             <div class="card">
-                <div class="unit-label">ITV Unit</div>
-                <div class="name-label">{name}</div>
-                <div class="id-label">ID: {int(id_val) if isinstance(id_val, (int, float)) else id_val}</div>
+                <div class="unit-text">ITV Unit</div>
+                <div class="name-text">{name}</div>
+                <div class="id-text">ID: {id_val}</div>
             </div>
             """, unsafe_allow_html=True)
 
-# Judul Utama
 st.title("🚢 Real-time Manning Deployment")
-st.write("Daftar Penempatan Personil per Dermaga")
 
-try:
-    df = load_data()
-    
-    # Mencari Shift Leader (Contoh: M. EFENDI dari baris 11 di CSV Anda)
-    shift_leader = "M. EFENDI" # Ini bisa didinamiskan dari pencarian string di DF
-    
-    col_info1, col_info2 = st.columns(2)
-    col_info1.info(f"👤 **Shift Leader Berth:** {shift_leader}")
-    col_info2.success("📅 **Status:** Operasional Aktif")
+# Widget Upload File
+uploaded_file = st.sidebar.file_uploader("Upload File Rekap Manning (CSV)", type=["csv"])
 
-    st.markdown("---")
+if uploaded_file is not None:
+    try:
+        # Membaca file yang diupload user
+        df = pd.read_csv(uploaded_file, header=None)
 
-    # Membuat 3 Kolom untuk Dermaga
-    col1, col2, col3 = st.columns(3)
+        # Info Header (Dinamis jika ada di file, atau statis)
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.info("👤 **Shift Leader Berth:** M. EFENDI")
+        with col_info2:
+            st.success("🕒 **Status:** Data Berhasil Dimuat")
 
-    # Logika Pengelompokan Berdasarkan Struktur CSV Anda
-    # Dermaga 1: Baris 2 ke bawah
-    with col1:
-        st.markdown('<div class="dermaga-title">📍 Dermaga 1 KOTA HIDAYAH</div>', unsafe_allow_html=True)
-        # Ambil data dari kolom 1 & 2 (index 1, 2) dan 3 & 4 (index 3, 4)
-        d1_data = df.iloc[2:12] # Range baris untuk Dermaga 1
-        for _, row in d1_data.iterrows():
-            display_personnel(row[1], row[2])
-            display_personnel(row[3], row[4])
+        st.markdown("---")
 
-    # Dermaga 2: Baris 14 ke bawah
-    with col2:
-        st.markdown('<div class="dermaga-title">📍 Dermaga 2 INTERASIA ENGAGE</div>', unsafe_allow_html=True)
-        d2_data = df.iloc[14:24] 
-        for _, row in d2_data.iterrows():
-            display_personnel(row[1], row[2])
-            display_personnel(row[3], row[4])
+        # Layout 3 Kolom
+        col1, col2, col3 = st.columns(3)
 
-    # Dermaga 4: Baris 25 ke bawah
-    with col3:
-        st.markdown('<div class="dermaga-title">📍 Dermaga 4 XIN YAN TAI</div>', unsafe_allow_html=True)
-        d4_data = df.iloc[25:35]
-        for _, row in d4_data.iterrows():
-            display_personnel(row[1], row[2])
-            display_personnel(row[3], row[4])
-            display_personnel(row[5], row[6]) # Dermaga 4 punya 3 kolom personil di CSV
+        # Logika Pengisian Berdasarkan Struktur File Anda
+        with col1:
+            st.markdown('<div class="dermaga-title">📍 Dermaga 1 KOTA HIDAYAH</div>', unsafe_allow_html=True)
+            # Baris 2 sampai 12 (sesuai snippet CSV Anda)
+            d1 = df.iloc[2:12] 
+            for _, row in d1.iterrows():
+                display_personnel(row[1], row[2]) # Kolom B & C
+                display_personnel(row[3], row[4]) # Kolom D & E
 
-except Exception as e:
-    st.error(f"Terjadi kesalahan: {e}")
-    st.warning("Pastikan file CSV 'rekap_manning_deployment.xlsx - Rekap_Manning.csv' sudah ada di folder yang sama.")
+        with col2:
+            st.markdown('<div class="dermaga-title">📍 Dermaga 2 INTERASIA ENGAGE</div>', unsafe_allow_html=True)
+            d2 = df.iloc[14:24]
+            for _, row in d2.iterrows():
+                display_personnel(row[1], row[2])
+                display_personnel(row[3], row[4])
+
+        with col3:
+            st.markdown('<div class="dermaga-title">📍 Dermaga 4 XIN YAN TAI</div>', unsafe_allow_html=True)
+            d4 = df.iloc[25:40]
+            for _, row in d4.iterrows():
+                display_personnel(row[1], row[2])
+                display_personnel(row[3], row[4])
+                display_personnel(row[5], row[6])
+
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat memproses file: {e}")
+else:
+    st.warning("Silakan upload file CSV melalui menu di sebelah kiri (sidebar) untuk melihat data.")
+    st.image("https://img.icons8.com/illustrations/printable/100/upload-mail.png", width=100)
