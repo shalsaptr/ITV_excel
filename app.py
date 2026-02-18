@@ -1,99 +1,79 @@
 import streamlit as st
 import pandas as pd
+from io import BytesIO
 
-# Konfigurasi Halaman
-st.set_page_config(page_title="Manning Deployment", layout="wide")
+st.set_page_config(page_title="Excel Cleaner - Manning Deployment", layout="wide")
 
-# Custom CSS untuk tampilan kartu (mirip gambar yang diunggah)
-st.markdown("""
-    <style>
-    .card {
-        background-color: white;
-        padding: 12px;
-        border-radius: 8px;
-        border-left: 5px solid #007bff;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-        margin-bottom: 10px;
-        color: black;
-    }
-    .dermaga-title {
-        background-color: #1c1e21;
-        color: white;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 15px;
-        font-weight: bold;
-        text-align: center;
-        font-size: 14px;
-    }
-    .unit-text { color: gray; font-size: 11px; margin-bottom: 2px; }
-    .name-text { font-weight: bold; font-size: 14px; color: #333; }
-    .id-text { color: #007bff; font-size: 12px; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("📊 Manning Data Extractor")
+st.markdown("Upload file Excel manning untuk dikonversi menjadi daftar ITV, ID, dan Nama yang rapi.")
 
-def display_personnel(id_val, name):
-    # Membersihkan data agar yang muncul hanya nama yang valid
-    if pd.notna(name) and str(name).strip() not in ["", "N", "Nama Personil", "ITV"]:
-        st.markdown(f"""
-            <div class="card">
-                <div class="unit-text">ITV Unit</div>
-                <div class="name-text">{name}</div>
-                <div class="id-text">ID: {id_val}</div>
-            </div>
-            """, unsafe_allow_html=True)
+# --- Fungsi Processing Data ---
+def process_manning_data(file):
+    # Baca excel tanpa header karena formatnya tidak standar
+    df = pd.read_excel(file, header=None)
+    
+    extracted_data = []
 
-st.title("🚢 Real-time Manning Deployment")
+    # Iterasi per baris untuk mengambil data
+    # Sesuai gambar/file: ID ada di kolom 1,3,5 dan Nama ada di kolom 2,4,6
+    # No ITV biasanya ada di baris tepat di atas baris Nama (atau di kolom tertentu)
+    
+    for r in range(len(df)):
+        for c in [1, 3, 5]: # Kolom B, D, F (ID)
+            try:
+                id_val = df.iloc[r, c]
+                name_val = df.iloc[r, c+1] # Kolom C, E, G (Nama)
+                
+                # Ambil No ITV (biasanya ada di sel atasnya atau sel ID itu sendiri di baris berbeda)
+                # Berdasarkan pola file Anda: ITV ada di baris sebelum Nama/ID
+                itv_val = df.iloc[r-1, c] 
 
-# Widget Upload File Excel
-uploaded_file = st.sidebar.file_uploader("Upload File Rekap Manning (Excel)", type=["xlsx"])
+                # Validasi: Hanya ambil jika Nama tidak kosong dan bukan "N" atau "Nama Operator"
+                if pd.notna(name_val) and str(name_val).strip() not in ["", "N", "Nama Personil", "Nama Operator"]:
+                    extracted_data.append({
+                        "No ITV": itv_val if pd.notna(itv_val) else "N/A",
+                        "No ID": id_val,
+                        "Nama Operator": name_val
+                    })
+            except:
+                continue
 
-if uploaded_file is not None:
-    try:
-        # Membaca file Excel (.xlsx)
-        # Menggunakan header=None agar kita bisa memetakan baris secara manual
-        df = pd.read_excel(uploaded_file, header=None)
+    return pd.DataFrame(extracted_data)
 
-        # Header Dashboard
-        col_info1, col_info2 = st.columns(2)
-        with col_info1:
-            # Mencari Shift Leader di cell tertentu (berdasarkan struktur file Anda)
-            st.info("👤 **Shift Leader Berth:** M. EFENDI")
-        with col_info2:
-            st.success("🕒 **Status:** Data Excel Berhasil Dimuat")
+# --- UI Streamlit ---
+uploaded_file = st.file_uploader("Pilih file Excel Rekap Manning", type=["xlsx"])
 
-        st.markdown("---")
+if uploaded_file:
+    with st.spinner('Sedang memproses data...'):
+        try:
+            # Jalankan pemrosesan
+            result_df = process_manning_data(uploaded_file)
+            
+            if not result_df.empty:
+                st.success(f"Berhasil mengekstrak {len(result_df)} data operator!")
+                
+                # Tampilkan Preview
+                st.subheader("Preview Data Bersih")
+                st.dataframe(result_df, use_container_width=True)
 
-        # Membuat 3 Kolom Layout
-        col1, col2, col3 = st.columns(3)
+                # --- Tombol Download Excel ---
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    result_df.to_excel(writer, index=False, sheet_name='Data_Manning')
+                
+                processed_data = output.getvalue()
 
-        # Bagian Dermaga 1
-        with col1:
-            st.markdown('<div class="dermaga-title">📍 Dermaga 1 KOTA HIDAYAH</div>', unsafe_allow_html=True)
-            # Menyesuaikan baris data dari Excel Anda
-            d1 = df.iloc[2:12] 
-            for _, row in d1.iterrows():
-                display_personnel(row[1], row[2]) # Kolom B (ID) & C (Nama)
-                display_personnel(row[3], row[4]) # Kolom D & E
+                st.download_button(
+                    label="📥 Download Hasil (.xlsx)",
+                    data=processed_data,
+                    file_name="Data_Manning_Clean.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.warning("Data tidak ditemukan. Pastikan format file sesuai.")
+                
+        except Exception as e:
+            st.error(f"Terjadi kesalahan: {e}")
 
-        # Bagian Dermaga 2
-        with col2:
-            st.markdown('<div class="dermaga-title">📍 Dermaga 2 INTERASIA ENGAGE</div>', unsafe_allow_html=True)
-            d2 = df.iloc[14:24]
-            for _, row in d2.iterrows():
-                display_personnel(row[1], row[2])
-                display_personnel(row[3], row[4])
-
-        # Bagian Dermaga 4
-        with col3:
-            st.markdown('<div class="dermaga-title">📍 Dermaga 4 XIN YAN TAI</div>', unsafe_allow_html=True)
-            d4 = df.iloc[25:45]
-            for _, row in d4.iterrows():
-                display_personnel(row[1], row[2])
-                display_personnel(row[3], row[4])
-                display_personnel(row[5], row[6]) # Dermaga 4 seringkali ada 3 kolom
-
-    except Exception as e:
-        st.error(f"Gagal membaca file Excel. Pastikan formatnya sesuai. Error: {e}")
 else:
-    st.info("Silakan buka menu di samping kiri (sidebar) dan upload file Excel Anda.")
+    st.info("Menunggu file diupload...")
